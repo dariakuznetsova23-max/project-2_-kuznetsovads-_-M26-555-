@@ -1,0 +1,14 @@
+# Виртуальное окружение
+.venv/
+
+# Результаты сборки
+dist/
+build/
+*.egg-info/
+
+# Кэш Python
+__pycache__/
+*.py[cod]
+
+# Кэш Ruff
+.ruff_cache/
