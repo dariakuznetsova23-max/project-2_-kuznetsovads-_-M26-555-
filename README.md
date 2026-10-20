@@ -40,3 +40,13 @@ uv run ruff format --check .
 ```powershell
 uv build
 ```
+
+## Управление таблицами
+
+Для запуска базы данных используется команда:
+```powershell
+uv run database
+
+## Демонстрация
+
+[Запись работы базы данных на Asciinema](https://asciinema.org/connect/5c9af3bf-7631-443f-bfd6-81ae7afbb649)
