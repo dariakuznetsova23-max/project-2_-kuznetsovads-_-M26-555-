@@ -22,10 +22,7 @@ build-backend = "uv_build"
 dev = [
     "ruff>=0.17.1",
 ]
-<<<<<<< HEAD
-=======
 
->>>>>>> 8746eb8601edc13431d365e65a56debb61572b2d
 [tool.ruff]
 line-length = 88
 target-version = "py312"
