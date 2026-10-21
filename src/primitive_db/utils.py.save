@@ -1,0 +1,86 @@
+import json
+from pathlib import Path
+from typing import Any
+
+
+DATA_DIR = Path("data")
+METADATA_FILE = Path("db_meta.json")
+
+
+def _load_json(filepath: Path, default: Any) -> Any:
+    """Загрузить JSON. Отсутствующий файл означает начальное значение."""
+    try:
+        with filepath.open(encoding="utf-8") as file:
+            return json.load(file)
+    except FileNotFoundError:
+        return default
+
+
+def _save_json(filepath: Path, data: Any) -> None:
+    """Сохранить данные в JSON-файл."""
+    filepath.parent.mkdir(parents=True, exist_ok=True)
+
+    with filepath.open("w", encoding="utf-8") as file:
+        json.dump(data, file, ensure_ascii=False, indent=4)
+        file.write("\n")
+
+
+def load_metadata(
+    filepath: str | Path = METADATA_FILE,
+) -> dict[str, Any]:
+    """Загрузить структуру таблиц."""
+    metadata = _load_json(Path(filepath), {})
+
+    if not isinstance(metadata, dict):
+        raise ValueError("Метаданные должны быть JSON-объектом.")
+
+    return metadata
+
+
+def save_metadata(
+    filepath: str | Path,
+    data: dict[str, Any],
+) -> None:
+    """Сохранить структуру таблиц."""
+    _save_json(Path(filepath), data)
+
+
+def _table_path(table_name: str) -> Path:
+    """Получить безопасный путь к файлу таблицы."""
+    if not table_name.isidentifier():
+        raise ValueError(
+            "Имя таблицы должно состоять из букв, цифр и подчёркиваний "
+            "и не начинаться с цифры."
+        )
+
+    return DATA_DIR / f"{table_name}.json"
+
+
+def load_table_data(table_name: str) -> list[dict[str, Any]]:
+    """Загрузить записи таблицы."""
+    filepath = _table_path(table_name)
+    data = _load_json(filepath, [])
+
+    if not isinstance(data, list):
+        raise ValueError(
+            f'Файл таблицы "{table_name}" должен содержать список записей.'
+        )
+
+    if not all(isinstance(record, dict) for record in data):
+        raise ValueError(
+            f'В файле таблицы "{table_name}" обнаружены неверные записи.'
+        )
+
+    return data
+
+
+def save_table_data(
+    table_name: str,
+    data: list[dict[str, Any]],
+) -> None:
+    """Сохранить записи таблицы."""
+    _save_json(_table_path(table_name), data)
+
+
+def delete_table_data(table_name: str) -> None:
+    """Удалить файл данных при удалении таблицы."""

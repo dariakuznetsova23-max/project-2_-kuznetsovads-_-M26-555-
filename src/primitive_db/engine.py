@@ -1,125 +1,222 @@
-import shlex
 from pathlib import Path
 
-import prompt
+from prettytable import PrettyTable
 
-from primitive_db.core import create_table, drop_table, list_tables
-from primitive_db.utils import load_metadata, save_metadata
+from primitive_db import core
+from primitive_db.parser import parse_command
+from primitive_db.utils import (
+    delete_table_data,
+    load_metadata,
+    load_table_data,
+    save_metadata,
+    save_table_data,
+)
 
 METADATA_FILE = Path("db_meta.json")
 
 
+HELP_TEXT = """
+***Операции с данными***
+
+create_table <таблица> <столбец:тип> ... - создать таблицу
+list_tables - показать список таблиц
+drop_table <таблица> - удалить таблицу
+
+insert into <таблица> values (<значение1>, ...) - добавить запись
+select from <таблица> - показать все записи
+select from <таблица> where <столбец> = <значение> - найти записи
+update <таблица> set <столбец> = <значение> where <столбец> = <значение>
+delete from <таблица> where <столбец> = <значение> - удалить записи
+info <таблица> - информация о таблице
+
+help - справка
+exit - выход
+
+Типы данных: int, str, bool.
+Строки должны быть в кавычках.
+Логические значения: true и false.
+ID создаётся автоматически и не передаётся при вставке.
+"""
+
+
 def print_help() -> None:
-    """Вывести справку по командам."""
-    print("\n***База данных***")
-    print("Функции:")
-    print(
-        "<command> create_table <имя_таблицы> "
-        "<столбец1:тип> <столбец2:тип> .. - создать таблицу"
-    )
-    print("<command> list_tables - показать список всех таблиц")
-    print("<command> drop_table <имя_таблицы> - удалить таблицу")
-    print("<command> exit - выход из программы")
-    print("<command> help - справочная информация\n")
+    print(HELP_TEXT)
 
 
-def _print_invalid_value(value: object) -> None:
-    print(f"Некорректное значение: {value}. Попробуйте снова.")
+def print_records(records, columns) -> None:
+    """Показать записи с помощью PrettyTable."""
+    table = PrettyTable()
+    column_names = [column["name"] for column in columns]
+    table.field_names = column_names
+
+    for record in records:
+        table.add_row([record[column_name] for column_name in column_names])
+
+    print(table)
+
+    if not records:
+        print("Подходящих записей нет.")
 
 
-def _parse_input(user_input: str) -> list[str] | None:
-    """Безопасно разобрать строку команды с помощью shlex."""
-    try:
-        return shlex.split(user_input)
-    except ValueError:
-        _print_invalid_value(user_input)
-        return None
+def execute_command(parsed, metadata_filepath: Path) -> bool:
+    """Выполнить команду. False означает выход."""
+    command = parsed["command"]
+
+    if command == "exit":
+        print("До свидания!")
+        return False
+
+    if command == "help":
+        print_help()
+        return True
+
+    metadata = load_metadata(metadata_filepath)
+
+    if command == "list_tables":
+        tables = core.list_tables(metadata)
+
+        if tables:
+            print("\n".join(tables))
+        else:
+            print("Таблиц пока нет.")
+
+        return True
+
+    table_name = parsed["table"]
+
+    if command == "create_table":
+        metadata = core.create_table(
+            metadata,
+            table_name,
+            parsed["columns"],
+        )
+
+        save_table_data(table_name, [])
+        save_metadata(metadata_filepath, metadata)
+
+        columns = core.get_columns(metadata, table_name)
+        columns_text = ", ".join(
+            f"{column['name']}:{column['type']}" for column in columns
+        )
+
+        print(f'Таблица "{table_name}" успешно создана со столбцами: {columns_text}')
+        return True
+
+    if command == "drop_table":
+        metadata = core.drop_table(metadata, table_name)
+        delete_table_data(table_name)
+        save_metadata(metadata_filepath, metadata)
+        print(f'Таблица "{table_name}" успешно удалена.')
+        return True
+
+    columns = core.get_columns(metadata, table_name)
+
+    if command == "info":
+        data = load_table_data(table_name)
+        columns_text = ", ".join(
+            f"{column['name']}:{column['type']}" for column in columns
+        )
+
+        print(f"Таблица: {table_name}")
+        print(f"Столбцы: {columns_text}")
+        print(f"Количество записей: {len(data)}")
+        return True
+
+    if command == "insert":
+        data = load_table_data(table_name)
+        new_data = core.insert(
+            metadata,
+            table_name,
+            parsed["values"],
+            table_data=data,
+        )
+
+        save_table_data(table_name, new_data)
+
+        print(
+            f"Запись с ID={new_data[-1]['ID']} успешно добавлена "
+            f'в таблицу "{table_name}".'
+        )
+        return True
+
+    where_clause = parsed["where"]
+
+    if where_clause is not None:
+        core.validate_clause(metadata, table_name, where_clause)
+
+    if command == "update":
+        core.validate_clause(
+            metadata,
+            table_name,
+            parsed["set"],
+            allow_id=False,
+        )
+
+    data = load_table_data(table_name)
+
+    if command == "select":
+        records = core.select(data, where_clause)
+        print_records(records, columns)
+        return True
+
+    matched_records = core.select(data, where_clause)
+
+    if not matched_records:
+        print("Подходящих записей нет. Данные не изменены.")
+        return True
+
+    if command == "update":
+        new_data = core.update(
+            data,
+            parsed["set"],
+            where_clause,
+        )
+    else:
+        new_data = core.delete(data, where_clause)
+
+    save_table_data(table_name, new_data)
+
+    for record in matched_records:
+        if command == "update":
+            print(
+                f"Запись с ID={record['ID']} в таблице "
+                f'"{table_name}" успешно обновлена.'
+            )
+        else:
+            print(
+                f'Запись с ID={record["ID"]} успешно удалена из таблицы "{table_name}".'
+            )
+
+    return True
 
 
 def run(filepath: str | Path | None = None) -> None:
-    """Запустить основной цикл базы данных."""
-    metadata_filepath = filepath or METADATA_FILE
-
+    """Запустить интерактивную базу данных."""
+    metadata_filepath = Path(filepath) if filepath else METADATA_FILE
     print_help()
 
     while True:
-        metadata = load_metadata(metadata_filepath)
-
         try:
-            user_input = prompt.string(">>>Введите команду: ")
+            text = input(">>> Введите команду: ").strip()
         except (EOFError, KeyboardInterrupt):
             print("\nДо свидания!")
             break
 
-        arguments = _parse_input(user_input)
-
-        if not arguments:
+        if not text:
             continue
 
-        command = arguments[0].lower()
+        try:
+            parsed = parse_command(text)
+            should_continue = execute_command(
+                parsed,
+                metadata_filepath,
+            )
+        except (ValueError, OSError) as error:
+            print(f"Ошибка: {error}")
+            continue
+        except (KeyError, TypeError) as error:
+            print(f"Ошибка структуры сохранённых данных. Проверьте JSON-файлы: {error}")
+            continue
 
-        if command == "exit":
-            print("До свидания!")
+        if not should_continue:
             break
-
-        if command == "help":
-            print_help()
-            continue
-
-        if command == "list_tables":
-            if len(arguments) != 1:
-                _print_invalid_value(" ".join(arguments))
-                continue
-
-            list_tables(metadata)
-            continue
-
-        if command == "create_table":
-            if len(arguments) < 3:
-                _print_invalid_value(" ".join(arguments))
-                continue
-
-            table_name = arguments[1]
-            columns = arguments[2:]
-            table_existed = table_name in metadata
-
-            updated_metadata = create_table(
-                metadata,
-                table_name,
-                columns,
-            )
-
-            table_created = not table_existed and table_name in updated_metadata
-
-            if table_created:
-                save_metadata(
-                    metadata_filepath,
-                    updated_metadata,
-                )
-
-            continue
-
-        if command == "drop_table":
-            if len(arguments) != 2:
-                _print_invalid_value(" ".join(arguments))
-                continue
-
-            table_name = arguments[1]
-            table_existed = table_name in metadata
-
-            updated_metadata = drop_table(
-                metadata,
-                table_name,
-            )
-
-            table_deleted = table_existed and table_name not in updated_metadata
-
-            if table_deleted:
-                save_metadata(
-                    metadata_filepath,
-                    updated_metadata,
-                )
-
-            continue
-
-        print(f"Функции {arguments[0]} нет. Попробуйте снова.")

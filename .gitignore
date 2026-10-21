@@ -11,4 +11,13 @@ __pycache__/
 *.py[cod]
 
 # Кэш Ruff
-.ruff_cache/
+.ruff_cache/data/*.json
+.venv/
+__pycache__/
+*.pyc
+
+data/*.json
+db_meta.json
+
+dist/
+dist-crud/
