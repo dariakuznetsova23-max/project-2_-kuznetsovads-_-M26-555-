@@ -1,0 +1,11 @@
+{"version": 2, "width": 120, "height": 30, "timestamp": 1792610628, "env": {"SHELL": "/bin/bash", "TERM": "xterm-256color"}}
+[0.046231, "o", "\u001b[?2004h\u001b]0;daria@LAPTOP-8941CFRI: /mnt/c/Users/daria/project-2_-kuznetsovads-_-M26-555-\u0007\u001b[01;32mdaria@LAPTOP-8941CFRI\u001b[00m:\u001b[01;34m/mnt/c/Users/daria/project-2_-kuznetsovads-_-M26-555-\u001b[00m$ "]
+[7.686363, "o", "uv run database"]
+[8.665829, "o", "\r\n\u001b[?2004l\r"]
+[9.962906, "o", "\r\n***Операции с данными***\r\n\r\ncreate_table <таблица> <столбец:тип> ... - создать таблицу\r\nlist_tables - показать список таблиц\r\ndrop_table <таблица> - удалить таблицу\r\n\r\ninsert into <таблица> values (<значение1>, ...) - добавить запись\r\nselect from <таблица> - показать все записи\r\nselect from <таблица> where <столбец> = <значение> - найти записи\r\nupdate <таблица> set <столбец> = <значение> where <столбец> = <значение>\r\ndelete from <таблица> where <столбец> = <значение> - удалить записи\r\ninfo <таблица> - информация о таблице\r\n\r\nhelp - справка\r\nexit - выход\r\n\r\nТипы данных: int, str, bool.\r\nСтроки должны быть в кавычках.\r\nЛогические значения: true и false.\r\nID создаётся автоматически и не передаётся при вставке.\r\n\r\n>>> Введите команду: "]
+[16.710989, "o", "exit"]
+[17.814036, "o", "\r\n"]
+[17.814582, "o", "До свидания!\r\n"]
+[17.840487, "o", "\u001b[?2004h\u001b]0;daria@LAPTOP-8941CFRI: /mnt/c/Users/daria/project-2_-kuznetsovads-_-M26-555-\u0007\u001b[01;32mdaria@LAPTOP-8941CFRI\u001b[00m:\u001b[01;34m/mnt/c/Users/daria/project-2_-kuznetsovads-_-M26-555-\u001b[00m$ "]
+[25.6655, "o", "exit"]
+[26.650046, "o", "\r\n\u001b[?2004l\rexit\r\n"]
