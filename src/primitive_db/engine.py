@@ -1,8 +1,10 @@
 from pathlib import Path
+from typing import Any
 
 from prettytable import PrettyTable
 
 from primitive_db import core
+from primitive_db.core import clear_select_cache
 from primitive_db.parser import parse_command
 from primitive_db.utils import (
     delete_table_data,
@@ -40,13 +42,19 @@ ID создаётся автоматически и не передаётся п
 
 
 def print_help() -> None:
+    """Вывести справку по командам."""
     print(HELP_TEXT)
 
 
-def print_records(records, columns) -> None:
+def print_records(
+    records: list[dict[str, Any]],
+    columns: list[dict[str, str]],
+) -> None:
     """Показать записи с помощью PrettyTable."""
     table = PrettyTable()
+
     column_names = [column["name"] for column in columns]
+
     table.field_names = column_names
 
     for record in records:
@@ -58,8 +66,16 @@ def print_records(records, columns) -> None:
         print("Подходящих записей нет.")
 
 
-def execute_command(parsed, metadata_filepath: Path) -> bool:
-    """Выполнить команду. False означает выход."""
+def execute_command(
+    parsed: dict[str, Any],
+    metadata_filepath: Path,
+) -> bool:
+    """
+    Выполнить одну команду.
+
+    Возвращает False, если приложение должно завершить работу.
+    Возвращает True, если нужно продолжить работу.
+    """
     command = parsed["command"]
 
     if command == "exit":
@@ -82,141 +98,267 @@ def execute_command(parsed, metadata_filepath: Path) -> bool:
 
         return True
 
-    table_name = parsed["table"]
-
     if command == "create_table":
-        metadata = core.create_table(
+        table_name = parsed["table"]
+
+        result = core.create_table(
             metadata,
             table_name,
             parsed["columns"],
         )
 
-        save_table_data(table_name, [])
-        save_metadata(metadata_filepath, metadata)
+        if result is None:
+            return True
 
-        columns = core.get_columns(metadata, table_name)
+        save_metadata(
+            metadata_filepath,
+            result,
+        )
+
+        save_table_data(
+            table_name,
+            [],
+        )
+
+        clear_select_cache()
+
+        columns = core.get_columns(
+            result,
+            table_name,
+        )
+
         columns_text = ", ".join(
             f"{column['name']}:{column['type']}" for column in columns
         )
 
         print(f'Таблица "{table_name}" успешно создана со столбцами: {columns_text}')
+
         return True
 
     if command == "drop_table":
-        metadata = core.drop_table(metadata, table_name)
+        table_name = parsed["table"]
+
+        result = core.drop_table(
+            metadata,
+            table_name,
+        )
+
+        if result is None:
+            return True
+
         delete_table_data(table_name)
-        save_metadata(metadata_filepath, metadata)
+
+        save_metadata(
+            metadata_filepath,
+            result,
+        )
+
+        clear_select_cache()
+
         print(f'Таблица "{table_name}" успешно удалена.')
+
         return True
 
-    columns = core.get_columns(metadata, table_name)
+    table_name = parsed["table"]
+
+    columns = core.get_columns(
+        metadata,
+        table_name,
+    )
 
     if command == "info":
-        data = load_table_data(table_name)
+        table_data = load_table_data(table_name)
+
         columns_text = ", ".join(
             f"{column['name']}:{column['type']}" for column in columns
         )
 
         print(f"Таблица: {table_name}")
         print(f"Столбцы: {columns_text}")
-        print(f"Количество записей: {len(data)}")
+        print(f"Количество записей: {len(table_data)}")
+
         return True
 
     if command == "insert":
-        data = load_table_data(table_name)
-        new_data = core.insert(
+        table_data = load_table_data(table_name)
+
+        result = core.insert(
             metadata,
             table_name,
             parsed["values"],
-            table_data=data,
+            table_data=table_data,
         )
 
-        save_table_data(table_name, new_data)
+        if result is None:
+            return True
+
+        save_table_data(
+            table_name,
+            result,
+        )
+
+        clear_select_cache()
 
         print(
-            f"Запись с ID={new_data[-1]['ID']} успешно добавлена "
+            f"Запись с ID={result[-1]['ID']} успешно добавлена "
             f'в таблицу "{table_name}".'
         )
+
         return True
 
-    where_clause = parsed["where"]
+    where_clause = parsed.get("where")
 
     if where_clause is not None:
-        core.validate_clause(metadata, table_name, where_clause)
-
-    if command == "update":
         core.validate_clause(
             metadata,
             table_name,
-            parsed["set"],
-            allow_id=False,
+            where_clause,
         )
 
-    data = load_table_data(table_name)
-
     if command == "select":
-        records = core.select(data, where_clause)
-        print_records(records, columns)
-        return True
+        table_data = load_table_data(table_name)
 
-    matched_records = core.select(data, where_clause)
+        result = core.select(
+            table_data,
+            where_clause,
+        )
 
-    if not matched_records:
-        print("Подходящих записей нет. Данные не изменены.")
+        if result is None:
+            return True
+
+        print_records(
+            result,
+            columns,
+        )
+
         return True
 
     if command == "update":
-        new_data = core.update(
-            data,
-            parsed["set"],
+        set_clause = parsed["set"]
+
+        core.validate_clause(
+            metadata,
+            table_name,
+            set_clause,
+            allow_id=False,
+        )
+
+        table_data = load_table_data(table_name)
+
+        matched_records = core.select(
+            table_data,
             where_clause,
         )
-    else:
-        new_data = core.delete(data, where_clause)
 
-    save_table_data(table_name, new_data)
+        if matched_records is None:
+            return True
 
-    for record in matched_records:
-        if command == "update":
+        if not matched_records:
+            print("Подходящих записей нет. Данные не изменены.")
+            return True
+
+        result = core.update(
+            table_data,
+            set_clause,
+            where_clause,
+        )
+
+        if result is None:
+            return True
+
+        save_table_data(
+            table_name,
+            result,
+        )
+
+        clear_select_cache()
+
+        for record in matched_records:
             print(
                 f"Запись с ID={record['ID']} в таблице "
                 f'"{table_name}" успешно обновлена.'
             )
-        else:
+
+        return True
+
+    if command == "delete":
+        table_data = load_table_data(table_name)
+
+        matched_records = core.select(
+            table_data,
+            where_clause,
+        )
+
+        if matched_records is None:
+            return True
+
+        if not matched_records:
+            print("Подходящих записей нет. Данные не изменены.")
+            return True
+
+        result = core.delete(
+            table_data,
+            where_clause,
+        )
+
+        if result is None:
+            return True
+
+        save_table_data(
+            table_name,
+            result,
+        )
+
+        clear_select_cache()
+
+        for record in matched_records:
             print(
                 f'Запись с ID={record["ID"]} успешно удалена из таблицы "{table_name}".'
             )
 
-    return True
+        return True
+
+    raise ValueError(f'Команда "{command}" не поддерживается.')
 
 
 def run(filepath: str | Path | None = None) -> None:
     """Запустить интерактивную базу данных."""
-    metadata_filepath = Path(filepath) if filepath else METADATA_FILE
+    metadata_filepath = Path(filepath) if filepath is not None else METADATA_FILE
+
     print_help()
 
     while True:
         try:
             text = input(">>> Введите команду: ").strip()
-        except (EOFError, KeyboardInterrupt):
-            print("\nДо свидания!")
-            break
 
-        if not text:
-            continue
+            if not text:
+                continue
 
-        try:
             parsed = parse_command(text)
+
             should_continue = execute_command(
                 parsed,
                 metadata_filepath,
             )
-        except (ValueError, OSError) as error:
-            print(f"Ошибка: {error}")
-            continue
-        except (KeyError, TypeError) as error:
-            print(f"Ошибка структуры сохранённых данных. Проверьте JSON-файлы: {error}")
-            continue
 
-        if not should_continue:
+            if not should_continue:
+                break
+
+        except (EOFError, KeyboardInterrupt):
+            print("\nДо свидания!")
             break
+
+        except ValueError as error:
+            print(f"Ошибка валидации или формата данных: {error}")
+
+        except KeyError as error:
+            name = error.args[0] if error.args else "неизвестный объект"
+            print(
+                f"Ошибка: Таблица, столбец или обязательное поле {name!r} не найдено."
+            )
+
+        except OSError as error:
+            print(f"Ошибка работы с файлом: {error}")
+
+        except TypeError as error:
+            print(f"Ошибка структуры данных. Проверьте JSON-файлы: {error}")

@@ -1,7 +1,28 @@
+import json
+from copy import deepcopy
 from typing import Any
 
+from primitive_db.cacher import create_cacher
+from primitive_db.decorators import (
+    confirm_action,
+    handle_db_errors,
+    log_time,
+)
 from primitive_db.utils import load_table_data
 
+_select_cache = create_cacher()
+
+
+def clear_select_cache():
+    """Очищает кэш результатов выборки."""
+    _select_cache.clear_cache()
+
+
+TYPE_CLASSES = {
+    "int": int,
+    "str": str,
+    "bool": bool,
+}
 TYPE_CLASSES = {
     "int": int,
     "str": str,
@@ -15,7 +36,7 @@ def get_columns(
 ) -> list[dict[str, str]]:
     """Получить схему существующей таблицы."""
     if table_name not in metadata:
-        raise ValueError(f'Таблица "{table_name}" не существует.')
+        raise KeyError(table_name)
 
     table = metadata[table_name]
 
@@ -30,6 +51,7 @@ def get_columns(
     return columns
 
 
+@handle_db_errors
 def create_table(
     metadata: dict[str, Any],
     table_name: str,
@@ -77,6 +99,8 @@ def create_table(
     return metadata
 
 
+@handle_db_errors
+@confirm_action("удаление таблицы")
 def drop_table(
     metadata: dict[str, Any],
     table_name: str,
@@ -123,6 +147,8 @@ def validate_clause(
             )
 
 
+@handle_db_errors
+@log_time
 def insert(
     metadata: dict[str, Any],
     table_name: str,
@@ -169,17 +195,47 @@ def _matches(
     )
 
 
+@handle_db_errors
+@log_time
+@handle_db_errors
+@log_time
 def select(
     table_data: list[dict[str, Any]],
     where_clause: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
-    """Получить все записи или записи по условию."""
-    if where_clause is None:
-        return list(table_data)
+    """Получить записи с кэшированием одинаковых запросов."""
+    conditions = where_clause or {}
 
-    return [record for record in table_data if _matches(record, where_clause)]
+    cache_key = json.dumps(
+        {
+            "data": table_data,
+            "where": conditions,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+
+    def calculate_result() -> list[dict[str, Any]]:
+        if not conditions:
+            return table_data
+
+        return [
+            row
+            for row in table_data
+            if all(
+                column in row
+                and type(row[column]) is type(value)
+                and row[column] == value
+                for column, value in conditions.items()
+            )
+        ]
+
+    result = _select_cache(cache_key, calculate_result)
+
+    return deepcopy(result)
 
 
+@handle_db_errors
 def update(
     table_data: list[dict[str, Any]],
     set_clause: dict[str, Any],
@@ -192,9 +248,18 @@ def update(
     ]
 
 
+@handle_db_errors
+@confirm_action("удаление записей")
 def delete(
     table_data: list[dict[str, Any]],
     where_clause: dict[str, Any],
 ) -> list[dict[str, Any]]:
     """Удалить подходящие записи."""
     return [record for record in table_data if not _matches(record, where_clause)]
+
+
+from primitive_db.decorators import (
+    confirm_action,
+    handle_db_errors,
+    log_time,
+)
