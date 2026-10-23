@@ -12,12 +12,4 @@ __pycache__/
 
 # Кэш Ruff
 .ruff_cache/data/*.json
-.venv/
-__pycache__/
-*.pyc
 
-data/*.json
-db_meta.json
-
-dist/
-dist-crud/
